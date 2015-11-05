@@ -1,0 +1,21 @@
+{
+    "name": "camohob/yii2-imap",
+    "description": "Imap agent component for Yii2",
+    "type": "yii2-extension",
+    "keywords": ["yii2","extension","imap"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "camohob",
+            "email": "v.samonov@mail.ru"
+        }
+    ],
+    "require": {
+        "yiisoft/yii2": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "camohob\\imap\\": ""
+        }
+    }
+}
