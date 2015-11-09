@@ -2,9 +2,6 @@
 
 namespace camohob\imap;
 
-use yii\base\Component;
-use yii\web\HttpException;
-
 /**
  * Example:
  * 
@@ -27,7 +24,6 @@ use yii\web\HttpException;
  * @author camohob <v.samonov@mail.ru>
  * 
  * @property-read ImapMessage[] $messages Return array of ImapMessge class
- * if you want to read other messages - use <code>getMessages($search);</code>
  * @property-read integer $count
  * @property-read resource $stream      Mailbox stream
  * @property string $user               Username
@@ -35,6 +31,8 @@ use yii\web\HttpException;
  * @property string $server             Host connect to server<br>example: mail.example.com
  * @property integer $port              Port connect to server<br>example: 110, 993, 995
  * @property string $type               Type connect to server<br>example: pop3, pop3/ssl, imap/ssl/novalidate-cert
+ * @property string $folder             Imap folder name, in default it is 'INBOX'
+ * @property-read array $folders        Imap folders list
  */
 class ImapAgent extends Component {
 
@@ -42,6 +40,7 @@ class ImapAgent extends Component {
     protected $_port = 110;
     protected $_type = 'pop3';
     protected $_options = 0;
+    protected $_folder = 'INBOX';
     //
     public $_user;
     public $_password;
@@ -51,13 +50,18 @@ class ImapAgent extends Component {
      * @var boolean 
      */
     public $pingStream = false;
+    public $serverCharset = 'UTF-8';
     //
+    protected $_search = 'ALL';
+    protected $_sort;
+    protected $_sortReverse = true;
     private $_count;
 
     /*
      * @var $_messages[] ImapMessage;
      */
     private $_messages;
+    private $_folders;
 
     /**
      * mailbox stream
@@ -72,6 +76,15 @@ class ImapAgent extends Component {
         $this->_init = true;
     }
 
+    public function __construct($config = []) {
+        parent::__construct($config);
+        $this->_sort = SORTDATE;
+    }
+
+    public function __destruct() {
+        $this->close();
+    }
+
     public function getStream() {
         if ($this->_stream !== null && (!is_resource($this->_stream) || ($this->pingStream && !imap_ping($this->_stream)))) {
             $this->disconnect();
@@ -83,11 +96,15 @@ class ImapAgent extends Component {
         return $this->_stream;
     }
 
+    protected function getImapDSN() {
+        return '{' . $this->getServer() . ':' . $this->getPort() . '/' . $this->getType() . '}';
+    }
+
     protected function connect() {
         if (!$this->_init) {
             $this->init();
         }
-        $this->_stream = @imap_open('{' . $this->getServer() . ':' . $this->getPort() . '/' . $this->getType() . '}INBOX', $this->getUser(), $this->getPassword(), $this->getOptions());
+        $this->_stream = @imap_open($this->getImapDSN() . $this->getFolder(), $this->getUser(), $this->getPassword(), $this->getOptions());
         if (!$this->_stream) {
             if (imap_last_error()) {
                 throw new HttpException(500, 'imap_last_error() : ' . imap_last_error());
@@ -97,17 +114,60 @@ class ImapAgent extends Component {
         }
     }
 
+    protected function isConnected($ping = false) {
+        return $this->_stream && is_resource($this->_stream) && (!$ping || imap_ping($this->_stream));
+    }
+
     protected function disconnect() {
-        if ($this->_stream && is_resource($this->_stream)) {
+        if ($this->isConnected()) {
             imap_close($this->_stream, CL_EXPUNGE);
         }
         $this->_stream = null;
         $this->_messages = null;
         $this->_count = null;
+        $this->_folders = null;
     }
 
+    /**
+     * Close IMAP connection
+     */
     public function close() {
         $this->disconnect();
+    }
+
+    /**
+     * Gets folders list
+     *
+     * This function returns an object containing listing the folders.
+     * The object has the following properties: messages, recent, unseen, uidnext, and uidvalidity.
+     *
+     * @return array listing the folders
+     */
+    public function getFolders() {
+        if (!isset($this->_folders)) {
+            $folders = imap_getmailboxes($this->getStream(), $this->getImapDSN(), "*");
+            foreach ($folders as $folder) {
+                $name = $folder->name;
+                $name = str_replace($this->getImapDSN(), "", $name);
+                $this->_folders[$name] = mb_convert_encoding($name, $this->serverCharset, 'utf7-imap');
+            }
+        }
+        return $this->_folders;
+    }
+
+    /**
+     * 
+     * @param string $folder Folder name in utf7-imap
+     * @return string
+     */
+    public function getFolderName($folder = null) {
+        if ($folder === null) {
+            $folder = $this->getFolder();
+        }
+        if (isset($this->getFolders()[$folder])) {
+            return $this->getFolders()[$folder];
+        }
+        return null;
     }
 
     public function getCount() {
@@ -119,49 +179,56 @@ class ImapAgent extends Component {
 
     /**
      * 
-     * @param string $search String type of message e.g. "ALL", "UNSEEN" or "UNSEEN DELETED"
-     * default is "UNSEEN DELETED"
-     * read <url>http://php.net/manual/ru/function.imap-search.php</url> for more details
+     * @param integer $offset
+     * @param integer $limit
+     * @param boolean $lazy_loading Lazy loading for message headers
      * @return ImapMessage[] Array of ImapMessage class
      */
-    public function getMessages($search = 'UNSEEN UNDELETED') {
+    public function getMessages($offset = 0, $limit = null, $lazy_loading = true) {
         if ($this->_messages === null) {
             $this->_messages = [];
-            foreach ($this->getMsgList($search) as $msg) {
-                $this->_messages[] = new ImapMessage($this, $msg);
+
+            $list = $this->getMsgIDs($offset, $limit);
+            if (!$lazy_loading) {
+                $headers = imap_fetch_overview($this->getStream(), implode(',', $list), FT_UID);
+                if (is_array($headers)) {
+                    if ($this->getSortReverse()) {
+                        krsort($headers);
+                    }
+                    foreach ($headers as $header) {
+                        $this->_messages[] = new ImapMessage($this, $header);
+                        unset($header);
+                    }
+                }
+                unset($headers);
+            } else {
+                foreach ($list as $uid) {
+                    $this->_messages[] = new ImapMessage($this, $uid);
+                }
             }
         }
         return $this->_messages;
     }
 
     /**
-     * 
-     * @param integer $msgId Message ID
-     * @return ImapMessage ImapMessage object
+     * Return one message object
+     * @param integer $msgID Message UID
+     * @return ImapMessage|null
      */
-    public function getMessage($msgId = null) {
-        if ($msgId === null) {
-            $list = $this->getMsgList();
-            if (empty($list)) {
-                $list = $this->getMsgList('ALL');
+    public function getMessage($msgID) {
+        $headers = imap_fetch_overview($this->getStream(), $msgID, FT_UID);
+        if (is_array($headers)) {
+            foreach ($headers as $header) {
+                return new ImapMessage($this, $header);
             }
-            if (!empty($list) && is_array($list) && isset($list[0])) {
-                $msgId = $list[0];
-            }
-        }
-        if ($msgId !== null || $msgId !== false) {
-            return new ImapMessage($this, $msgId);
         }
         return null;
     }
 
-    /**
-     * Get messages id
-     * @return array
-     */
-    protected function getMsgList($search = 'UNSEEN UNDELETED') {
-        $list = imap_search($this->getStream(), $search);
-        return !$list ? [] : $list;
+    protected function getMsgIDs($offset, $limit) {
+        $list = imap_sort($this->getStream(), $this->getSort(), $this->getSortReverse() ? 1 : 0, SE_UID, $this->getSearch(), $this->serverCharset);
+        $list = array_slice($list, $offset, $limit);
+        return !is_array($list) ? [] : $list;
     }
 
     public function getServer() {
@@ -216,6 +283,51 @@ class ImapAgent extends Component {
     public function setPassword($val) {
         $this->_password = $val;
         $this->disconnect();
+    }
+
+    public function getFolder() {
+        return $this->_folder;
+    }
+
+    public function setFolder($val) {
+        if ($this->getFolder() === $val) {
+            return true;
+        }
+        $this->_folder = $val;
+        if ($this->isConnected(true)) {
+            return imap_subscribe($this->getStream(), $this->getImapDSN() . $this->_folder);
+        } else {
+            $this->disconnect();
+        }
+        return true;
+    }
+
+    function getSearch() {
+        return $this->_search;
+    }
+
+    function setSearch($_search) {
+        $this->_search = $_search;
+        $this->_messages = null;
+    }
+
+    function getSort() {
+        return $this->_sort;
+        $this->_messages = null;
+    }
+
+    function getSortReverse() {
+        return $this->_sortReverse;
+        $this->_messages = null;
+    }
+
+    function setSort($sort) {
+        $this->_sort = $sort;
+    }
+
+    function setSortReverse($sortReverse) {
+        $this->_sortReverse = $sortReverse;
+        $this->_messages = null;
     }
 
 }

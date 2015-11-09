@@ -8,190 +8,91 @@
 
 namespace camohob\imap;
 
-use yii\base\Component;
-
 /**
  * Description of ImapMessage
  *
  * @author camohob <v.samonov@mail.ru>
  * 
- * @property string $subject Subject
- * @property string $body Return body of message in "html" format. If you want to get result in other format - use <code>getBody($type);</code>
- * @property string $from Return "from" field of message, consist of address and name of sender.
- * @property string $to Return "to" field of message
- * @property integer $type Return type of message
- * @property-read ImapAttachment[] $attachments Attachments of message.
- * @property-read ImapAttachment[] $content Message content as ImapAttachment
- * @property-read Object $headerInfo
+ * @property-read ImapAgent $imap ImapAgent Object
+ * 
+ * @property-read integer $type Return type of message
+ * @property-read string $body Return body of message in "html" format. If you want to get result in other format - use <code>getBody($type);</code>
+ * @property-read string $date When was it sent
+ * @property-read string $udate When was it sent in unix timestamp
+ * @property-read string $subject the mails subject
+ * @property-read string $from who sent it
+ * @property-read string $to recipient
+ * @property-read string $id Mail-ID
+ * @property-read string $references is a reference to this mail id
+ * @property-read string $in_reply_to is a reply to this mail id
+ * @property-read integer $size size in bytes
+ * @property-read integer $uid UID the mail has in the mailbox
+ * @property-read integer $msgno mail sequence number in the mailbox
+ * @property-read boolean $recent this mail is flagged as recent
+ * @property-read boolean $flagged this mail is flagged
+ * @property-read boolean $answered this mail is flagged as answered
+ * @property-read boolean $deleted this mail is flagged for deletion
+ * @property-read boolean $seen this mail is flagged as already read
+ * @property-read boolean $draft this mail is flagged as being a draft
+ * 
+ * @property-read ImapFile[] $attachments Attachments of message.
+ * @property-read ImapFile[] $content Message content as ImapAttachment
+ * 
  */
-class ImapMessage extends Component {
+class ImapMessage extends MessagePart {
 
-    const TYPE_TEXT = 0;
-    const TYPE_MULTIPART = 1;
-    const TYPE_MESSAGE = 2;
-    const TYPE_APPLICATION = 3;
-    const TYPE_AUDIO = 4;
-    const TYPE_IMAGE = 5;
-    const TYPE_VIDEO = 6;
-    const TYPE_MODEL = 7;
-    const TYPE_OTHER = 8;
-
-    public static $types = [
-        self::TYPE_TEXT => 'text',
-        self::TYPE_MULTIPART => 'multipart',
-        self::TYPE_MESSAGE => 'message',
-        self::TYPE_APPLICATION => 'application',
-        self::TYPE_AUDIO => 'audio',
-        self::TYPE_IMAGE => 'image',
-        self::TYPE_VIDEO => 'video',
-        self::TYPE_MODEL => 'model',
-        self::TYPE_OTHER => 'other',
-    ];
-    protected $imap;
-    protected $id;
+    protected $_imap;
+    protected $_uid;
     protected $_headerInfo;
-    protected $_structure;
     protected $_subject;
     protected $_body;
-    protected $_attachments = [];
-    protected $_content = [];
+    protected $_attachments;
+    protected $_content;
 
-    public function init() {
-        parent::init();
-    }
+//    protected $_structure;
 
-    public function __construct(ImapAgent &$imap, $id, $config = []) {
-        parent::__construct($config);
-
-        $this->imap = $imap;
-        $this->id = $id;
-    }
-
-    protected function getStructure() {
-        if ($this->_structure === null) {
-            $this->_structure = imap_fetchstructure($this->imap->getStream(), $this->id);
+    public function __construct(ImapAgent $imap, &$header, $config = []) {
+        $this->_imap = $imap;
+        if ($header instanceof \stdClass) {
+            $this->_uid = $header->uid;
+            $this->_headerInfo = $header;
+        } else {
+            $this->_uid = $header;
         }
-        return $this->_structure;
-    }
-
-    public function getHeaderInfo() {
-        if ($this->_headerInfo === null) {
-            $this->_headerInfo = imap_headerinfo($this->imap->getStream(), $this->id);
-        }
-        return $this->_headerInfo;
-    }
-
-    protected function fetchParams($params) {
-        $arr = [];
-        foreach ($params as $param) {
-            $arr[$param->attribute] = $this->decodeMime($param->value);
-        }
-        return $arr;
-    }
-
-    protected function decodeMime($text) {
-        $list = imap_mime_header_decode($text);
-        $result = '';
-        foreach ($list as $data) {
-            $result.= mb_convert_encoding($data->text, 'utf-8', $data->charset == 'default' ? 'iso-8859-1' : $data->charset);
-        }
-        return $result;
-    }
-
-    protected function decodeData($data, $encoding = 0, $charset = 'utf-8') {
-        switch ($encoding) {
-            case 0:
-            case 1:
-                $data = imap_utf8($data);
-                break;
-            case 2:
-                $data = imap_binary($data);
-                break;
-            case 3:
-                $data = base64_decode($data);
-                break;
-            case 4:
-                $data = quoted_printable_decode($data);
-                break;
-            default:
-                break;
-        }
-        return $charset === 'utf-8' ? $data : mb_convert_encoding($data, 'utf-8', $charset);
+        parent::__construct($this);
+//        xdebug_var_dump($this->_headerInfo);
     }
 
     /**
-     * 
-     * @param stdClass $part
-     * @param array $params
-     * @param array $dparams
-     * @return ImapAttachment
+     * Fetch mail header
+     *
+     * Returns object describing mail header. The object will only define a property if it exists. The possible properties are:
+     * <ul>
+     *  <li>subject - the mails subject</li>
+     *  <li>from - who sent it</li>
+     *  <li>to - recipient</li>
+     *  <li>date - when was it sent</li>
+     *  <li>message_id - Mail-ID</li>
+     *  <li>references - is a reference to this mail id</li>
+     *  <li>in_reply_to - is a reply to this mail id</li>
+     *  <li>size - size in bytes</li>
+     *  <li>uid - UID the mail has in the mailbox</li>
+     *  <li>msgno - mail sequence number in the mailbox</li>
+     *  <li>recent - this mail is flagged as recent</li>
+     *  <li>flagged - this mail is flagged</li>
+     *  <li>answered - this mail is flagged as answered</li>
+     *  <li>deleted - this mail is flagged for deletion</li>
+     *  <li>seen - this mail is flagged as already read</li>
+     *  <li>draft - this mail is flagged as being a draft</li>
+     * </ul>
+     * @return \stdClass Message header object
      */
-    protected function createAttachment($partno, $part, $params = [], $dparams = []) {
-        $filetitle = isset($dparams['filename']) ? $dparams['filename'] : '';
-        $filename = isset($params['name']) ? $params['name'] : ((!empty($filetitle) ? $filetitle : time()) . isset($part->subtype) ? $part->subtype : '' );
-
-        $attachment = new ImapAttachment($this, $partno);
-        $attachment->type = $part->type;
-        $attachment->encoding = isset($part->encoding) ? $part->encoding : 0;
-        $attachment->mimetype = strtolower(static::$types[$part->type] . '/' . (isset($part->subtype) ? $part->subtype : ''));
-        $attachment->title = $filetitle;
-        $attachment->filename = $filename;
-        $attachment->size = isset($part->bytes) ? $part->bytes : null;
-
-        return $attachment;
-    }
-
-    protected function fetchBody($part = null, $partno = 0) {
-        if ($this->_body !== null) {
-            return [];
+    protected function getHeaderInfo() {
+        if ($this->_headerInfo === null) {
+            $overviews = imap_fetch_overview($this->getImap()->getStream(), $this->getUid(), FT_UID);
+            $this->_headerInfo = array_shift($overviews);
         }
-        if ($part === null) {
-            $part = $this->getStructure();
-        }
-        $body = [];
-        $params = $this->fetchParams(isset($part->parameters) ? $part->parameters : []);
-        $dparams = $this->fetchParams(isset($part->dparameters) ? $part->dparameters : []);
-        if ($part->ifdisposition && strtolower($part->disposition) == 'attachment') {
-            $this->addAttachment($this->createAttachment($partno, $part, $params, $dparams));
-        } else {
-            switch ($part->type) {
-                case self::TYPE_TEXT:
-                    $data = !$partno ? imap_body($this->imap->getStream(), $this->id) : imap_fetchbody($this->imap->getStream(), $this->id, $partno);
-                    $body[static::$types[self::TYPE_TEXT]][strtolower($part->subtype)][] = $this->decodeData($data, isset($part->encoding) ? $part->encoding : 0, isset($params['charset']) ? $params['charset'] : 'utf-8');
-                    break;
-                case self::TYPE_MULTIPART:
-                    foreach ($part->parts as $part_id => $next_part) {
-                        $parts = $this->fetchBody($next_part, (!$partno ? '' : $partno . '.') . ($part_id + 1));
-//					if (strtolower($part->subtype) == 'alternative') {
-//						break;
-//					}
-                        $body = array_merge($body, $parts);
-                    }
-                    break;
-                case self::TYPE_MESSAGE:
-                //original message
-//                    break;
-                case self::TYPE_APPLICATION:
-//				break;
-                case self::TYPE_AUDIO:
-//				break;
-                case self::TYPE_IMAGE:
-//				break;
-                case self::TYPE_VIDEO:
-//				break;
-                case self::TYPE_MODEL:
-//                    break;
-                case self::TYPE_OTHER:
-                default :
-                    $this->addContent($this->createAttachment($partno, $part, $params, $dparams));
-                    break;
-            }
-        }
-        if (!$partno) {
-            $this->_body = $body;
-            return;
-        }
-        return $body;
+        return $this->_headerInfo;
     }
 
     public function getSubject() {
@@ -201,8 +102,45 @@ class ImapMessage extends Component {
         return $this->_subject;
     }
 
-    public function getData($part, $encoding) {
-        return $this->decodeData(imap_fetchbody($this->imap->getStream(), $this->id, $part), $encoding);
+    /**
+     * 
+     * @param MessagePart $part
+     */
+    protected function fetchBody($part = null, $force = false) {
+        if ($part === null) {
+            if (!$force && $this->_body !== null) {
+                return;
+            }
+            $part = $this;
+            $this->_attachments = null;
+            $this->_content = null;
+//            xdebug_var_dump($this->getStructure());
+        }
+        if ($part->getType() === self::TYPE_MULTIPART) {
+            foreach ($part->getParts() as $subpart) {
+                if ($subpart instanceof ImapFile) {
+                    if ($subpart->isAttachment) {
+                        $this->_attachments[] = $subpart;
+                    } else {
+                        $this->_content[] = $subpart;
+                    }
+                    continue;
+                }
+                switch ($subpart->getType()) {
+                    case self::TYPE_TEXT:
+                        $this->_body[strtolower($subpart->subtype)][] = $subpart;
+                        break;
+                    case self::TYPE_MULTIPART:
+                        $this->fetchBody($subpart);
+                        break;
+                    default :
+
+                        break;
+                }
+            }
+        } else {
+            $this->_body[strtolower($this->subtype)][] = $this;
+        }
     }
 
     /**
@@ -212,61 +150,120 @@ class ImapMessage extends Component {
      */
     public function getBody($type = 'html') {
         $this->fetchBody();
-        $result = null;
-        $alter = null;
-        if (isset($this->_body[static::$types[self::TYPE_TEXT]])) {
-            foreach ($this->_body[static::$types[self::TYPE_TEXT]] as $subtype => $subtypes) {
-                foreach ($subtypes as $text) {
-//					xdebug_var_dump($subtype);
-                    if ($subtype == $type) {
-                        $result.= $text;
-                    } else {
-                        $alter.= $text;
-                    }
-                }
-            }
+        if (empty($this->_body)) {
+            return null;
         }
-        return empty($result) ? $alter : $result;
+        if (isset($this->_body[strtolower($type)])) {
+            return $this->implodeBody('', $this->_body[strtolower($type)]);
+        }
+        $result = $this->implodeBody("\r\n<br/>", $this->_body);
+        if (strtolower($type) === 'html') {
+            $result = str_replace(["\r\n", "\n"], '<br/>', $result);
+        }
+        return $result;
+    }
+
+    protected function implodeBody($glue = '', $body) {
+        if (is_array($body)) {
+            $result = [];
+            foreach ($body as $part) {
+                $result[] = $this->implodeBody($glue, $part);
+            }
+            return implode($glue, $result);
+        } else if ($body instanceof MessagePart) {
+            return $body->getData();
+        }
+        return $body;
     }
 
     public function getFrom() {
-        return $this->decodeMime($this->getHeaderInfo()->fromaddress);
+        return $this->decodeMime($this->getHeaderInfo()->from);
     }
 
     public function getTo() {
-        return $this->decodeMime($this->getHeaderInfo()->toadress);
+        return $this->decodeMime($this->getHeaderInfo()->to);
     }
 
-    public function getType() {
-        return $this->getStructure()->type;
-    }
-
-    public function getMime() {
-        return $this->getStructure()->subtype;
-    }
-
-    protected function addContent($content) {
-        $this->_content[] = $content;
-    }
-    
     /**
      * 
-     * @return ImapAttachment[]
+     * @return ImapFile[]
      */
     public function getContent() {
+        $this->fetchBody();
         return $this->_content;
     }
 
-    protected function addAttachment($attach) {
-        $this->_attachments[] = $attach;
-    }
-
-    function getAttachments() {
+    /**
+     * 
+     * @return ImapFile[]
+     */
+    public function getAttachments() {
+        $this->fetchBody();
         return $this->_attachments;
     }
 
     public function delete() {
-        imap_delete($this->imap->getStream(), $this->id);
+        imap_delete($this->getImap()->getStream(), $this->getUid(), FT_UID);
+    }
+
+    public function getImap() {
+        return $this->_imap;
+    }
+
+    public function getUid() {
+        return $this->_uid;
+    }
+
+    public function getId() {
+        return $this->getHeaderInfo()->message_id;
+    }
+
+    public function getDate() {
+        return $this->getHeaderInfo()->date;
+    }
+
+    public function getUdate() {
+        return $this->getHeaderInfo()->udate;
+    }
+
+    public function getSeen() {
+        return $this->getHeaderInfo()->seen;
+    }
+
+    public function getRecent() {
+        return $this->getHeaderInfo()->recent;
+    }
+
+    public function getFlagged() {
+        return $this->getHeaderInfo()->flagged;
+    }
+
+    public function getAnswered() {
+        return $this->getHeaderInfo()->answered;
+    }
+
+    public function getDeleted() {
+        return $this->getHeaderInfo()->deleted;
+    }
+
+    public function getDraft() {
+        return $this->getHeaderInfo()->draft;
+    }
+
+    public function getReferences() {
+        return $this->getHeaderInfo()->references;
+    }
+
+    public function getIn_reply_to() {
+        return $this->getHeaderInfo()->in_reply_to;
+    }
+
+    public function getSize() {
+        return $this->getHeaderInfo()->size;
+    }
+
+    public function getMsgno() {
+        return $this->getHeaderInfo()->msgno;
     }
 
 }
