@@ -22,7 +22,7 @@ class ImapFile extends MessagePart {
     public function getFilename(){
         $filename = $this->getParameters('name');
         $filetitle = $this->getTitle();
-        return $filename === null ? ($filetitle === null ? time() : $filetitle) . $this->getSubtype() : $filename;
+        return $filename === null ? ($filetitle === null ? time() : $filetitle) . '.' . $this->getSubtype() : $filename;
     }
     
     public function getSize() {

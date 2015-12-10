@@ -60,6 +60,7 @@ class MessagePart extends Object {
     protected $_parts;
     protected $_parameters;
     protected $_dparameters;
+    protected $_bodyRAW;
 
     public function __construct($message, $part = null, $partno = 0, $config = []) {
         parent::__construct($config);
@@ -67,9 +68,6 @@ class MessagePart extends Object {
         $this->_partno = $partno;
         if ($part !== null) {
             $this->_structure = $part;
-//        } else {
-//            $this->_structure = imap_fetchstructure($this->_message->imap->getStream(), $this->_message->getUid(), FT_UID);
-//            xdebug_var_dump($this->_structure);
         }
     }
 
@@ -78,6 +76,107 @@ class MessagePart extends Object {
             $this->_structure = imap_fetchstructure($this->_message->getImap()->getStream(), $this->_message->getUid(), FT_UID);
         }
         return $this->_structure;
+    }
+
+    protected function convertEncoding($encoding) {
+        $name = strtoupper('ENC' . str_replace('-', '', $encoding));
+        if (defined($name)) {
+            return constant($name);
+        }
+        return ENCOTHER;
+    }
+
+    protected function getStructureAlternative($head = null, $body = null) {
+        if ($head === null) {
+            if (!$this->partno) {
+                $head = imap_fetchheader($this->_message->getImap()->getStream(), $this->_message->getUid(), FT_UID);
+            } else {
+                return null;
+            }
+        }
+        $headers = $this->parseHeaders($head);
+        $struct = new \stdClass();
+        $contentType = isset($headers['content-type']) ? $headers['content-type'][0] : 'other';
+        $contentType = explode('/', $contentType);
+        $contentType = count($contentType) > 1 ? $contentType : array_merge($contentType, [NULL]);
+        list($contentType, $subType) = $contentType;
+        $type = array_search($contentType, static::$types);
+        $struct->type = $type !== false ? $type : self::TYPE_OTHER;
+        $struct->ifdescription = false;
+        $struct->ifid = false;
+        $struct->ifsubtype = $subType !== null;
+        $struct->subtype = $subType;
+        $struct->ifparameters = true;
+        $struct->parameters = [];
+        $struct->ifparameters = false;
+        if (isset($headers['content-type'])) {
+            foreach ($headers['content-type'] as $key => $val) {
+                if (!is_numeric($key)) {
+                    $struct->ifparameters = true;
+                    $struct->parameters[] = [
+                        'attribute' => $key,
+                        'value' => $val,
+                    ];
+                }
+            }
+        }
+        $struct->encoding = $this->convertEncoding(isset($headers['content-transfer-encoding']) ? $headers['content-transfer-encoding'][0] : 'other');
+        $disposition = isset($headers['content-disposition']) ? $headers['content-disposition'][0] : null;
+        $struct->ifdisposition = $disposition !== null;
+        if ($disposition !== null) {
+            $struct->disposition = $disposition;
+            $struct->dparameters = [];
+            $struct->ifdparameters = false;
+            foreach ($headers['content-disposition'] as $key => $val) {
+                if (!is_numeric($key)) {
+                    $struct->ifdparameters = true;
+                    $struct->dparameters[] = [
+                        'attribute' => $key,
+                        'value' => $val,
+                    ];
+                }
+            }
+        }
+        if ($struct->type === self::TYPE_MULTIPART) {
+            if ($boundary = (isset($headers['content-type']['boundary']) ? $headers['content-type']['boundary'] : null)) {
+                $struct->parts = [];
+                $parts = explode('--' . $boundary, $this->getBodyRAW());
+                array_shift($parts);
+                array_pop($parts);
+                foreach ($parts as $part) {
+                    list($subhead, $subbody) = array_merge(explode("\r\n\r\n", $part, 2), [null]);
+                    $struct->parts[] = $this->getStructureAlternative(trim($subhead), $subbody);
+                }
+            }
+        } else {
+            $struct->_body = $body;
+            $struct->bytes = strlen($body);
+        }
+        return $struct;
+    }
+
+    protected function parseHeaders($head) {
+        $headers = [];
+        $lines = explode("\r\n", $head);
+        foreach ($lines as $line) {
+            if (strpos($line, ':') === false) {
+                continue;
+            }
+            list($key, $val) = explode(':', $line, 2);
+            $key = strtolower(trim($key));
+            $params = explode(';', $val);
+            $val = [];
+            while (($param = array_pop($params)) !== null) {
+                if (strpos($param, '=') === false) {
+                    $val[] = trim($param);
+                    continue;
+                }
+                list($p_key, $p_val) = explode('=', $param, 2);
+                $val[strtolower(trim($p_key))] = trim($p_val, "\t\n\r\0\x0B\"");
+            }
+            $headers[$key] = $val === [] ? null : $val;
+        }
+        return $headers;
     }
 
     public function getPartno() {
@@ -93,11 +192,16 @@ class MessagePart extends Object {
             $this->_parts = [];
             $struct = $this->getStructure();
             if (isset($struct->parts) && is_array($struct->parts)) {
+                if (count($struct->parts) < 2) {
+                    // Альтернативный вариант получения структуры сообщения
+                    \Yii::warning('attachment mistrust #' . $this->_message->getUid() . ': ' . $this->_message->getFrom() . ' - ' . $this->_message->getSubject());
+                    $struct = $this->getStructureAlternative();
+                }
                 foreach ($struct->parts as $partId => $nextPart) {
                     if ($this->getProperty('type', $nextPart) === self::TYPE_MULTIPART || ($this->getProperty('type', $nextPart) === self::TYPE_TEXT && $this->getProperty('disposition', $nextPart) !== 'attachment')) {
-                        $this->_parts[] = new MessagePart($this->_message, $nextPart, (!$this->_partno ? '' : $this->_partno . '.') . ($partId + 1));
+                        $this->_parts[] = new MessagePart($this->_message, $nextPart, (!$this->_partno ? '' : ($this->_partno . '.')) . ($partId + 1));
                     } else {
-                        $this->_parts[] = new ImapFile($this->_message, $nextPart, (!$this->_partno ? '' : $this->_partno . '.') . ($partId + 1));
+                        $this->_parts[] = new ImapFile($this->_message, $nextPart, (!$this->_partno ? '' : ($this->_partno . '.')) . ($partId + 1));
                     }
                 }
                 $this->_structure->parts = null;
@@ -106,19 +210,33 @@ class MessagePart extends Object {
         return $this->_parts;
     }
 
+    public function getBodyRAW() {
+        if ($this->_bodyRAW === null) {
+            if ($this->_structure instanceof \stdClass && isset($this->_structure->_body)) {
+                $this->_bodyRAW = $this->_structure->_body;
+                unset($this->_structure->_body);
+            } else {
+                if (!$this->getPartno()) {
+                    $this->_bodyRAW = imap_body($this->_message->getImap()->getStream(), $this->_message->getUid(), FT_UID);
+                } else {
+                    $this->_bodyRAW = imap_fetchbody($this->_message->getImap()->getStream(), $this->_message->getUid(), $this->getPartno(), FT_UID);
+                }
+            }
+        }
+        return $this->_bodyRAW;
+    }
+
+    public function setBodyRAW($body) {
+        $this->_bodyRAW = $body;
+    }
+
     /**
      * Get part data
      * @return string
      */
     public function getData() {
-        $encoding = $this->getEncoding();
         $charset = $this->getParameters('charset');
-        if (!$this->getPartno()) {
-            $body = imap_body($this->_message->getImap()->getStream(), $this->_message->getUid(), FT_UID);
-        } else {
-            $body = imap_fetchbody($this->_message->getImap()->getStream(), $this->_message->getUid(), $this->getPartno(), FT_UID);
-        }
-        return $this->decodeData($body, $encoding, $charset ? $charset : self::DEFAULT_IMAP_CHARSET);
+        return $this->decodeData($this->getBodyRAW(), $this->getEncoding(), $charset ? $charset : self::DEFAULT_IMAP_CHARSET);
     }
 
     protected function decodeData($data, $encoding = 0, $data_charset = 'utf-8') {
@@ -217,7 +335,7 @@ class MessagePart extends Object {
 
     public function getParameters($param = null) {
         if (!isset($this->_parameters)) {
-            $val = $this->getProperty(__METHOD__);
+            $val = $this->parseParams($this->getProperty(__METHOD__));
             $this->_parameters = &$val;
         }
         if ($param !== null) {

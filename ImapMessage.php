@@ -49,8 +49,6 @@ class ImapMessage extends MessagePart {
     protected $_attachments;
     protected $_content;
 
-//    protected $_structure;
-
     public function __construct(ImapAgent $imap, &$header, $config = []) {
         $this->_imap = $imap;
         if ($header instanceof \stdClass) {
@@ -60,7 +58,6 @@ class ImapMessage extends MessagePart {
             $this->_uid = $header;
         }
         parent::__construct($this);
-//        xdebug_var_dump($this->_headerInfo);
     }
 
     /**
@@ -114,7 +111,6 @@ class ImapMessage extends MessagePart {
             $part = $this;
             $this->_attachments = null;
             $this->_content = null;
-//            xdebug_var_dump($this->getStructure());
         }
         if ($part->getType() === self::TYPE_MULTIPART) {
             foreach ($part->getParts() as $subpart) {

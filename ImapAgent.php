@@ -106,12 +106,13 @@ class ImapAgent extends Component {
         }
         $this->_stream = @imap_open($this->getImapDSN() . $this->getFolder(), $this->getUser(), $this->getPassword(), $this->getOptions());
         if (!$this->_stream) {
-            if (imap_last_error()) {
-                throw new HttpException(500, 'imap_last_error() : ' . imap_last_error());
+            if ($error = imap_last_error()) {
+                throw new HttpException(500, $error);
             } else {
                 throw new HttpException(500, 'Couldn\'t open stream  ' . $this->getServer() . ':' . $this->getPort() . '.');
             }
         }
+//        imap_gc($this->_stream, IMAP_GC_ELT | IMAP_GC_ENV | IMAP_GC_TEXTS);
     }
 
     protected function isConnected($ping = false) {
