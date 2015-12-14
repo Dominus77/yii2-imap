@@ -34,6 +34,7 @@ namespace camohob\imap;
  * @property-read boolean $deleted this mail is flagged for deletion
  * @property-read boolean $seen this mail is flagged as already read
  * @property-read boolean $draft this mail is flagged as being a draft
+ * @property-read \stdClass $headerInfo Header of the message
  * 
  * @property-read ImapFile[] $attachments Attachments of message.
  * @property-read ImapFile[] $content Message content as ImapAttachment
@@ -43,25 +44,26 @@ class ImapMessage extends MessagePart {
 
     protected $_imap;
     protected $_uid;
+    protected $_overview;
     protected $_headerInfo;
     protected $_subject;
     protected $_body;
     protected $_attachments;
     protected $_content;
 
-    public function __construct(ImapAgent $imap, &$header, $config = []) {
+    public function __construct(ImapAgent $imap, &$overview, $config = []) {
         $this->_imap = $imap;
-        if ($header instanceof \stdClass) {
-            $this->_uid = $header->uid;
-            $this->_headerInfo = $header;
+        if ($overview instanceof \stdClass) {
+            $this->_uid = $overview->uid;
+            $this->_overview = $overview;
         } else {
-            $this->_uid = $header;
+            $this->_uid = $overview;
         }
         parent::__construct($this);
     }
 
     /**
-     * Fetch mail header
+     * Fetch mail overview
      *
      * Returns object describing mail header. The object will only define a property if it exists. The possible properties are:
      * <ul>
@@ -84,17 +86,24 @@ class ImapMessage extends MessagePart {
      * </ul>
      * @return \stdClass Message header object
      */
-    protected function getHeaderInfo() {
-        if ($this->_headerInfo === null) {
+    protected function getOverview() {
+        if ($this->_overview === null) {
             $overviews = imap_fetch_overview($this->getImap()->getStream(), $this->getUid(), FT_UID);
-            $this->_headerInfo = array_shift($overviews);
+            $this->_overview = array_shift($overviews);
+        }
+        return $this->_overview;
+    }
+
+    public function getHeaderInfo() {
+        if ($this->_headerInfo === null) {
+            $this->_headerInfo = imap_headerinfo($this->getImap()->getStream(), $this->getMsgno());
         }
         return $this->_headerInfo;
     }
 
     public function getSubject() {
         if ($this->_subject === null) {
-            $this->_subject = $this->decodeMime(isset($this->getHeaderInfo()->subject) ? $this->getHeaderInfo()->subject : '');
+            $this->_subject = $this->decodeMime(isset($this->getOverview()->subject) ? $this->getOverview()->subject : '');
         }
         return $this->_subject;
     }
@@ -173,11 +182,11 @@ class ImapMessage extends MessagePart {
     }
 
     public function getFrom() {
-        return $this->decodeMime($this->getHeaderInfo()->from);
+        return $this->decodeMime($this->getOverview()->from);
     }
 
     public function getTo() {
-        return $this->decodeMime($this->getHeaderInfo()->to);
+        return $this->decodeMime($this->getOverview()->to);
     }
 
     /**
@@ -211,55 +220,55 @@ class ImapMessage extends MessagePart {
     }
 
     public function getId() {
-        return $this->getHeaderInfo()->message_id;
+        return $this->getOverview()->message_id;
     }
 
     public function getDate() {
-        return $this->getHeaderInfo()->date;
+        return $this->getOverview()->date;
     }
 
     public function getUdate() {
-        return $this->getHeaderInfo()->udate;
+        return $this->getOverview()->udate;
     }
 
     public function getSeen() {
-        return $this->getHeaderInfo()->seen;
+        return $this->getOverview()->seen;
     }
 
     public function getRecent() {
-        return $this->getHeaderInfo()->recent;
+        return $this->getOverview()->recent;
     }
 
     public function getFlagged() {
-        return $this->getHeaderInfo()->flagged;
+        return $this->getOverview()->flagged;
     }
 
     public function getAnswered() {
-        return $this->getHeaderInfo()->answered;
+        return $this->getOverview()->answered;
     }
 
     public function getDeleted() {
-        return $this->getHeaderInfo()->deleted;
+        return $this->getOverview()->deleted;
     }
 
     public function getDraft() {
-        return $this->getHeaderInfo()->draft;
+        return $this->getOverview()->draft;
     }
 
     public function getReferences() {
-        return $this->getHeaderInfo()->references;
+        return $this->getOverview()->references;
     }
 
     public function getIn_reply_to() {
-        return $this->getHeaderInfo()->in_reply_to;
+        return $this->getOverview()->in_reply_to;
     }
 
     public function getSize() {
-        return $this->getHeaderInfo()->size;
+        return $this->getOverview()->size;
     }
 
     public function getMsgno() {
-        return $this->getHeaderInfo()->msgno;
+        return $this->getOverview()->msgno;
     }
 
 }
