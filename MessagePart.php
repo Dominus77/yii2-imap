@@ -235,11 +235,10 @@ class MessagePart extends Object {
      * @return string
      */
     public function getData() {
-        $charset = $this->getParameters('charset');
-        return $this->decodeData($this->getBodyRAW(), $this->getEncoding(), $charset ? $charset : self::DEFAULT_IMAP_CHARSET);
+        return $this->decodeData($this->getBodyRAW(), $this->getEncoding());
     }
 
-    protected function decodeData($data, $encoding = 0, $data_charset = 'utf-8') {
+    protected function decodeData($data, $encoding = 0) {
         switch ($encoding) {
             case ENC7BIT:
             case ENC8BIT:
@@ -257,7 +256,7 @@ class MessagePart extends Object {
             default:
                 break;
         }
-        return ($data_charset === $this->_message->getImap()->serverCharset) ? $data : mb_convert_encoding($data, $this->_message->getImap()->serverCharset, $data_charset);
+        return $data;
     }
 
     protected function getProperty($method, $object = null) {

@@ -176,7 +176,8 @@ class ImapMessage extends MessagePart {
             }
             return implode($glue, $result);
         } else if ($body instanceof MessagePart) {
-            return $body->getData();
+            $charset = $body->getParameters('charset');
+            return ($charset === null || $charset === $this->getImap()->serverCharset) ? $body->getData() : mb_convert_encoding($body->getData(), $this->getImap()->serverCharset, $charset);
         }
         return $body;
     }
