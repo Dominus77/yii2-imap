@@ -204,7 +204,7 @@ class ImapMessage extends MessagePart {
      */
     public function getAttachments() {
         $this->fetchBody();
-        return $this->_attachments;
+        return $this->_attachments !== null ? $this->_attachments : [];
     }
 
     public function delete() {

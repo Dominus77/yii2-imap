@@ -192,10 +192,10 @@ class MessagePart extends Object {
             $this->_parts = [];
             $struct = $this->getStructure();
             if (isset($struct->parts) && is_array($struct->parts)) {
-                if (count($struct->parts) < 2) {
+                if (count($struct->parts) < 2 && ($alt = $this->getStructureAlternative())) {
                     // Альтернативный вариант получения структуры сообщения
                     \Yii::warning('attachment mistrust #' . $this->_message->getUid() . ': ' . $this->_message->getFrom() . ' - ' . $this->_message->getSubject());
-                    $struct = $this->getStructureAlternative();
+                    $struct = $alt;
                 }
                 foreach ($struct->parts as $partId => $nextPart) {
                     if ($this->getProperty('type', $nextPart) === self::TYPE_MULTIPART || ($this->getProperty('type', $nextPart) === self::TYPE_TEXT && $this->getProperty('disposition', $nextPart) !== 'attachment')) {
