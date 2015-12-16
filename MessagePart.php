@@ -137,9 +137,9 @@ class MessagePart extends Object {
                 }
             }
         }
+        $struct->parts = [];
         if ($struct->type === self::TYPE_MULTIPART) {
             if ($boundary = (isset($headers['content-type']['boundary']) ? $headers['content-type']['boundary'] : null)) {
-                $struct->parts = [];
                 $parts = explode('--' . $boundary, $this->getBodyRAW());
                 array_shift($parts);
                 array_pop($parts);
