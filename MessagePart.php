@@ -85,6 +85,17 @@ class MessagePart extends Object {
         }
         return ENCOTHER;
     }
+    
+    protected function fetchStructureAlternative($head = null, $body = null) {
+        $struct = $this->getStructureAlternative($head = null, $body = null);
+        if (!empty($struct) && count($this->getStructure()->parts) !== count($struct->parts)) {
+            $this->_structure = $struct;
+            $this->_parameters = null;
+            $this->_dparameters = null;
+            return true;
+        }
+        return false;
+    }
 
     protected function getStructureAlternative($head = null, $body = null) {
         if ($head === null) {
@@ -104,6 +115,10 @@ class MessagePart extends Object {
         $struct->type = $type !== false ? $type : self::TYPE_OTHER;
         $struct->ifdescription = false;
         $struct->ifid = false;
+        if (isset($headers['content-id'])) {
+            $struct->ifid = true;
+            $struct->id = $headers['content-id'][0];
+        }
         $struct->ifsubtype = $subType !== null;
         $struct->subtype = $subType;
         $struct->ifparameters = true;
@@ -113,10 +128,10 @@ class MessagePart extends Object {
             foreach ($headers['content-type'] as $key => $val) {
                 if (!is_numeric($key)) {
                     $struct->ifparameters = true;
-                    $struct->parameters[] = [
-                        'attribute' => $key,
-                        'value' => $val,
-                    ];
+                    $param = new \stdClass();
+                    $param->attribute = $key;
+                    $param->value = $val;
+                    $struct->parameters[] = $param;                    
                 }
             }
         }
@@ -130,10 +145,10 @@ class MessagePart extends Object {
             foreach ($headers['content-disposition'] as $key => $val) {
                 if (!is_numeric($key)) {
                     $struct->ifdparameters = true;
-                    $struct->dparameters[] = [
-                        'attribute' => $key,
-                        'value' => $val,
-                    ];
+                    $param = new \stdClass();
+                    $param->attribute = $key;
+                    $param->value = $val;
+                    $struct->dparameters[] = $param;    
                 }
             }
         }
@@ -156,27 +171,33 @@ class MessagePart extends Object {
     }
 
     protected function parseHeaders($head) {
-        $headers = [];
-        $lines = explode("\r\n", $head);
-        foreach ($lines as $line) {
-            if (strpos($line, ':') === false) {
-                continue;
-            }
-            list($key, $val) = explode(':', $line, 2);
-            $key = strtolower(trim($key));
-            $params = explode(';', $val);
-            $val = [];
-            while (($param = array_pop($params)) !== null) {
-                if (strpos($param, '=') === false) {
-                    $val[] = trim($param);
-                    continue;
+        $data = $head;
+        $parsed = [];
+        $blocks = preg_split('/\n\n/', $data);
+        $lines = array();
+        $matches = array();
+        foreach ($blocks as $i => $block) {
+            $parsed[$i] = array();
+            $lines = preg_split('/\n(([\w.-]+)\: *((.*\n\s+.+)+|(.*(?:\n))|(.*))?)/', $block, -1, PREG_SPLIT_DELIM_CAPTURE);
+            foreach ($lines as $line) {
+                $param_matches = [];
+                if (preg_match('/^\n?([\w.-]+)\: *((.*\n\s+.+)+|(.*(?:\n))|(.*))?$/', $line, $matches) && preg_match_all('/\s*(([\w.-]+)=(?:\"([^\"]+)\"|([^;]+))|[^;]+)(?:;|$)/', preg_replace('/\r\n[ \t]*/', '', trim($matches[2])), $param_matches, PREG_SET_ORDER)) {
+                    foreach ($param_matches as $match) {
+                        $param_key = strtolower($matches[1]);
+                        if (isset($match[2])) {
+                            if (isset($match[4])) {
+                                $parsed[$i][$param_key][strtolower($match[2])] = $match[4];
+                            } else {
+                                $parsed[$i][$param_key][strtolower($match[2])] = $match[3];
+                            }
+                        } else {
+                            $parsed[$i][$param_key][] = $match[1];
+                        }
+                    }
                 }
-                list($p_key, $p_val) = explode('=', $param, 2);
-                $val[strtolower(trim($p_key))] = trim($p_val, "\t\n\r\0\x0B\"");
             }
-            $headers[$key] = $val === [] ? null : $val;
         }
-        return $headers;
+        return count($parsed) ? $parsed[0] : [];
     }
 
     public function getPartno() {
@@ -192,10 +213,10 @@ class MessagePart extends Object {
             $this->_parts = [];
             $struct = $this->getStructure();
             if (isset($struct->parts) && is_array($struct->parts)) {
-                if (count($struct->parts) < 2 && ($alt = $this->getStructureAlternative())) {
+                if (count($struct->parts) < 2 && $this->fetchStructureAlternative()) {
                     // Альтернативный вариант получения структуры сообщения
                     \Yii::warning('attachment mistrust #' . $this->_message->getUid() . ': ' . $this->_message->getFrom() . ' - ' . $this->_message->getSubject());
-                    $struct = $alt;
+                    $struct = $this->getStructure();
                 }
                 foreach ($struct->parts as $partId => $nextPart) {
                     if ($this->getProperty('type', $nextPart) === self::TYPE_MULTIPART || ($this->getProperty('type', $nextPart) === self::TYPE_TEXT && $this->getProperty('disposition', $nextPart) !== 'attachment')) {
@@ -271,7 +292,7 @@ class MessagePart extends Object {
         }
         $prop = strtolower(str_replace('get', '', $method));
         $ifprop = 'if' . $prop;
-        if ((!isset($object->$ifprop) || $object->$ifprop) && isset($object->$prop)) {
+        if ((!property_exists($object, $ifprop) || $object->$ifprop) && isset($object->$prop)) {
             return $object->$prop;
         }
         return null;

@@ -20,9 +20,9 @@ class ImapFile extends MessagePart {
     }
     
     public function getFilename(){
-        $filename = $this->getParameters('name');
+        $filename = $this->getDparameters('filename');
         $filetitle = $this->getTitle();
-        return $filename === null ? ($filetitle === null ? time() : $filetitle) . '.' . $this->getSubtype() : $filename;
+        return $filename === null ? (($filetitle === null ? time() : $filetitle) . '.' . $this->getSubtype()) : $filename;
     }
     
     public function getSize() {
@@ -30,7 +30,7 @@ class ImapFile extends MessagePart {
     }
     
     public function getTitle() {
-        return $this->getDparameters('filename');
+        return $this->getParameters('name');
     }
     
     public function getIsAttachment() {
