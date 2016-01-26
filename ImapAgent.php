@@ -227,7 +227,7 @@ class ImapAgent extends Component {
     }
 
     protected function getMsgIDs($offset, $limit) {
-        $list = imap_sort($this->getStream(), $this->getSort(), $this->getSortReverse() ? 1 : 0, SE_UID, $this->getSearch(), $this->serverCharset);
+        $list = imap_sort($this->getStream(), $this->getSort(), $this->getSortReverse() ? 1 : 0, SE_UID | SE_NOPREFETCH, $this->getSearch(), $this->serverCharset);
         $list = array_slice($list, $offset, $limit);
         return !is_array($list) ? [] : $list;
     }
@@ -314,16 +314,15 @@ class ImapAgent extends Component {
 
     function getSort() {
         return $this->_sort;
-        $this->_messages = null;
     }
 
     function getSortReverse() {
         return $this->_sortReverse;
-        $this->_messages = null;
     }
 
     function setSort($sort) {
         $this->_sort = $sort;
+        $this->_messages = null;
     }
 
     function setSortReverse($sortReverse) {

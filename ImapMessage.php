@@ -196,7 +196,7 @@ class ImapMessage extends MessagePart {
      */
     public function getContent() {
         $this->fetchBody();
-        return $this->_content;
+        return $this->_content !== null ? $this->_content : [];
     }
 
     /**
