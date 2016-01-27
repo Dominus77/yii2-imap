@@ -33,6 +33,7 @@ namespace camohob\imap;
  * @property string $type               Type connect to server<br>example: pop3, pop3/ssl, imap/ssl/novalidate-cert
  * @property string $folder             Imap folder name, in default it is 'INBOX'
  * @property-read array $folders        Imap folders list
+ * @property boolean $markAsSeen        Mark message as seen when getting message body
  */
 class ImapAgent extends Component {
 
@@ -55,6 +56,7 @@ class ImapAgent extends Component {
     protected $_search = 'ALL';
     protected $_sort;
     protected $_sortReverse = true;
+    protected $_markAsSeen = true;
     private $_count;
 
     /*
@@ -303,31 +305,42 @@ class ImapAgent extends Component {
         return true;
     }
 
-    function getSearch() {
+    public function getSearch() {
         return $this->_search;
     }
 
-    function setSearch($_search) {
+    public function setSearch($_search) {
         $this->_search = $_search;
         $this->_messages = null;
     }
 
-    function getSort() {
+    public function getSort() {
         return $this->_sort;
     }
 
-    function getSortReverse() {
+    public function getSortReverse() {
         return $this->_sortReverse;
     }
 
-    function setSort($sort) {
+    public function setSort($sort) {
         $this->_sort = $sort;
         $this->_messages = null;
     }
 
-    function setSortReverse($sortReverse) {
+    public function setSortReverse($sortReverse) {
         $this->_sortReverse = $sortReverse;
         $this->_messages = null;
+    }
+
+    public function getMarkAsSeen($asBool = true) {
+        if (!$asBool) {
+            return $this->_markAsSeen ? 0 : FT_PEEK;
+        }
+        return $this->_markAsSeen;
+    }
+
+    public function setMarkAsSeen($val) {
+        $this->_markAsSeen = (bool) $val;
     }
 
 }

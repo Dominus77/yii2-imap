@@ -238,9 +238,9 @@ class MessagePart extends Object {
                 unset($this->_structure->_body);
             } else {
                 if (!$this->getPartno()) {
-                    $this->_bodyRAW = imap_body($this->_message->getImap()->getStream(), $this->_message->getUid(), FT_UID);
+                    $this->_bodyRAW = imap_body($this->_message->getImap()->getStream(), $this->_message->getUid(), FT_UID | $this->_message->getImap()->getMarkAsSeen(false));
                 } else {
-                    $this->_bodyRAW = imap_fetchbody($this->_message->getImap()->getStream(), $this->_message->getUid(), $this->getPartno(), FT_UID);
+                    $this->_bodyRAW = imap_fetchbody($this->_message->getImap()->getStream(), $this->_message->getUid(), $this->getPartno(), FT_UID | $this->_message->getImap()->getMarkAsSeen(false));
                 }
             }
         }
