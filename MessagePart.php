@@ -215,7 +215,7 @@ class MessagePart extends Object {
             if (isset($struct->parts) && is_array($struct->parts)) {
                 if (count($struct->parts) < 2 && $this->fetchStructureAlternative()) {
                     // Альтернативный вариант получения структуры сообщения
-                    \Yii::warning('attachment mistrust #' . $this->_message->getUid() . ': ' . $this->_message->getFrom() . ' - ' . $this->_message->getSubject());
+//                    \Yii::warning('attachment mistrust #' . $this->_message->getUid() . ': ' . $this->_message->getFrom() . ' - ' . $this->_message->getSubject());
                     $struct = $this->getStructure();
                 }
                 foreach ($struct->parts as $partId => $nextPart) {
