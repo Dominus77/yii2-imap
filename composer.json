@@ -11,6 +11,8 @@
         }
     ],
     "require": {
+        "php": ">=5.4.0",
+        "ext-imap": "*",
         "yiisoft/yii2": "*"
     },
     "autoload": {

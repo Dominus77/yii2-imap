@@ -12,11 +12,10 @@ namespace camohob\imap;
  * Description of ImapMessage
  *
  * @author camohob <v.samonov@mail.ru>
- * 
  * @property-read ImapAgent $imap ImapAgent Object
- * 
  * @property-read integer $type Return type of message
- * @property-read string $body Return body of message in "html" format. If you want to get result in other format - use <code>getBody($type);</code>
+ * @property-read string $body Return body of message in "html" format. If you want to get result in other format - use
+ *     <code>getBody($type);</code>
  * @property-read string $date When was it sent
  * @property-read string $udate When was it sent in unix timestamp
  * @property-read string $subject the mails subject
@@ -35,12 +34,11 @@ namespace camohob\imap;
  * @property-read boolean $seen this mail is flagged as already read
  * @property-read boolean $draft this mail is flagged as being a draft
  * @property-read \stdClass $headerInfo Header of the message
- * 
  * @property-read ImapFile[] $attachments Attachments of message.
  * @property-read ImapFile[] $content Message content as ImapAttachment
- * 
  */
-class ImapMessage extends MessagePart {
+class ImapMessage extends MessagePart
+{
 
     protected $_imap;
     protected $_uid;
@@ -51,7 +49,8 @@ class ImapMessage extends MessagePart {
     protected $_attachments;
     protected $_content;
 
-    public function __construct(ImapAgent $imap, &$overview, $config = []) {
+    public function __construct(ImapAgent $imap, &$overview, $config = [])
+    {
         $this->_imap = $imap;
         if ($overview instanceof \stdClass) {
             $this->_uid = $overview->uid;
@@ -64,8 +63,8 @@ class ImapMessage extends MessagePart {
 
     /**
      * Fetch mail overview
-     *
-     * Returns object describing mail header. The object will only define a property if it exists. The possible properties are:
+     * Returns object describing mail header. The object will only define a property if it exists. The possible
+     * properties are:
      * <ul>
      *  <li>subject - the mails subject</li>
      *  <li>from - who sent it</li>
@@ -84,35 +83,56 @@ class ImapMessage extends MessagePart {
      *  <li>seen - this mail is flagged as already read</li>
      *  <li>draft - this mail is flagged as being a draft</li>
      * </ul>
+     *
      * @return \stdClass Message header object
      */
-    protected function getOverview() {
+    protected function getOverview()
+    {
         if ($this->_overview === null) {
             $overviews = imap_fetch_overview($this->getImap()->getStream(), $this->getUid(), FT_UID);
             $this->_overview = array_shift($overviews);
         }
+
         return $this->_overview;
     }
 
-    public function getHeaderInfo() {
+    /**
+     * Returns message property value or default value
+     *
+     * @param $property Property name
+     * @param null $default Default value
+     * @return null
+     */
+    protected function getMessageProperty($property, $default = null)
+    {
+        $overview = $this->getOverview();
+
+        return isset($overview->$property) ? $overview->$property : null;
+    }
+
+    public function getHeaderInfo()
+    {
         if ($this->_headerInfo === null) {
             $this->_headerInfo = imap_headerinfo($this->getImap()->getStream(), $this->getMsgno());
         }
+
         return $this->_headerInfo;
     }
 
-    public function getSubject() {
+    public function getSubject()
+    {
         if ($this->_subject === null) {
-            $this->_subject = $this->decodeMime(isset($this->getOverview()->subject) ? $this->getOverview()->subject : '');
+            $this->_subject = $this->decodeMime($this->getMessageProperty('subject', ''));
         }
+
         return $this->_subject;
     }
 
     /**
-     * 
      * @param MessagePart $part
      */
-    protected function fetchBody($part = null, $force = false) {
+    protected function fetchBody($part = null, $force = false)
+    {
         if ($part === null) {
             if (!$force && $this->_body !== null) {
                 return;
@@ -149,11 +169,11 @@ class ImapMessage extends MessagePart {
     }
 
     /**
-     * 
      * @param string $type May be "html" or "plain", if required format not found - function returns plain text
      * @return string
      */
-    public function getBody($type = 'html') {
+    public function getBody($type = 'html')
+    {
         $this->fetchBody();
         if (empty($this->_body)) {
             return null;
@@ -165,111 +185,136 @@ class ImapMessage extends MessagePart {
         if (strtolower($type) === 'html') {
             $result = str_replace(["\r\n", "\n"], '<br/>', $result);
         }
+
         return $result;
     }
 
-    protected function implodeBody($glue = '', $body) {
+    protected function implodeBody($glue = '', $body)
+    {
         if (is_array($body)) {
             $result = [];
             foreach ($body as $part) {
                 $result[] = $this->implodeBody($glue, $part);
             }
+
             return implode($glue, $result);
         } else if ($body instanceof MessagePart) {
             $charset = $body->getParameters('charset');
+
             return ($charset === null || $charset === $this->getImap()->serverCharset) ? $body->getData() : mb_convert_encoding($body->getData(), $this->getImap()->serverCharset, $charset);
         }
+
         return $body;
     }
 
-    public function getFrom() {
-        return $this->decodeMime($this->getOverview()->from);
+    public function getFrom()
+    {
+        return $this->decodeMime($this->getMessageProperty('from'));
     }
 
-    public function getTo() {
-        return $this->decodeMime($this->getOverview()->to);
+    public function getTo()
+    {
+        return $this->decodeMime($this->getMessageProperty('to'));
     }
 
     /**
-     * 
      * @return ImapFile[]
      */
-    public function getContent() {
+    public function getContent()
+    {
         $this->fetchBody();
+
         return $this->_content !== null ? $this->_content : [];
     }
 
     /**
-     * 
      * @return ImapFile[]
      */
-    public function getAttachments() {
+    public function getAttachments()
+    {
         $this->fetchBody();
+
         return $this->_attachments !== null ? $this->_attachments : [];
     }
 
-    public function delete() {
+    public function delete()
+    {
         imap_delete($this->getImap()->getStream(), $this->getUid(), FT_UID);
     }
 
-    public function getImap() {
+    public function getImap()
+    {
         return $this->_imap;
     }
 
-    public function getUid() {
+    public function getUid()
+    {
         return $this->_uid;
     }
 
-    public function getId() {
-        return $this->getOverview()->message_id;
+    public function getId()
+    {
+        return $this->getMessageProperty('message_id');
     }
 
-    public function getDate() {
-        return $this->getOverview()->date;
+    public function getDate()
+    {
+        return $this->getMessageProperty('date');
     }
 
-    public function getUdate() {
-        return $this->getOverview()->udate;
+    public function getUdate()
+    {
+        return $this->getMessageProperty('udate');
     }
 
-    public function getSeen() {
-        return $this->getOverview()->seen;
+    public function getSeen()
+    {
+        return $this->getMessageProperty('seen');
     }
 
-    public function getRecent() {
-        return $this->getOverview()->recent;
+    public function getRecent()
+    {
+        return $this->getMessageProperty('recent');
     }
 
-    public function getFlagged() {
-        return $this->getOverview()->flagged;
+    public function getFlagged()
+    {
+        return $this->getMessageProperty('flagged');
     }
 
-    public function getAnswered() {
-        return $this->getOverview()->answered;
+    public function getAnswered()
+    {
+        return $this->getMessageProperty('answered');
     }
 
-    public function getDeleted() {
-        return $this->getOverview()->deleted;
+    public function getDeleted()
+    {
+        return $this->getMessageProperty('deleted');
     }
 
-    public function getDraft() {
-        return $this->getOverview()->draft;
+    public function getDraft()
+    {
+        return $this->getMessageProperty('draft');
     }
 
-    public function getReferences() {
-        return $this->getOverview()->references;
+    public function getReferences()
+    {
+        return $this->getMessageProperty('references');
     }
 
-    public function getIn_reply_to() {
-        return $this->getOverview()->in_reply_to;
+    public function getIn_reply_to()
+    {
+        return $this->getMessageProperty('in_reply_to');
     }
 
-    public function getSize() {
-        return $this->getOverview()->size;
+    public function getSize()
+    {
+        return $this->getMessageProperty('size');
     }
 
-    public function getMsgno() {
-        return $this->getOverview()->msgno;
+    public function getMsgno()
+    {
+        return $this->getMessageProperty('msgno');
     }
 
 }
